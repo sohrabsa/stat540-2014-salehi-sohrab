@@ -1,0 +1,242 @@
+Seminar 3
+========================================================
+## Thrid Seminar, introduction to R graphics
+# ref: http://www.ugrad.stat.ubc.ca/~stat540/seminars/seminar03_graphics-ggplot2.html
+
+```{r}
+library(ggplot2)
+
+dataDir <- "/Users/sohrab/Me/Apply/Canada Apply/Courses/Second Semester/Stat 540/Lab/stat540_2014/examples/photoRec/data/"
+kDat <- readRDS(paste(dataDir, "GSE4051_MINI.rds", sep=""))
+str(kDat)
+table(kDat$devStage)
+head(kDat)
+
+table(kDat$gType)
+with(kDat, table(devStage, gType, sidChar))
+
+qplot(crabHammer, eggBomb, data=kDat)
+head(kDat)
+
+p <- ggplot(kDat, aes(x = crabHammer, y = eggBomb))
+p <- p + geom_point()
+p
+(p <- p + stat_smooth())
+(p <- p + theme_bw() + 
+   xlab("Expression of crabHammer") + 
+   ylab("Expression of eggBomb") + 
+   ggtitle("Scatterplot for expression levels"))
+
+nDat <- with(kDat, data.frame(sidChar, sidNum, devStage, gType, crabHammer,
+                              probeset = factor(rep(c("eggBomb", "poisonFang"), each = nrow(kDat))),
+                              geneExp = c(eggBomb, poisonFang)))
+str(nDat)
+
+# no standard error ribbon here
+(p <- ggplot(nDat, aes(crabHammer, geneExp, color = probeset)) + geom_point() + stat_smooth(se = F))
+
+# add regression line for data points
+(p <- ggplot(nDat, aes(crabHammer, geneExp, color = probeset)) + 
+   geom_point() + 
+   stat_smooth(se = F, aes(group = 1)))
+
+(p <- ggplot(nDat, aes(crabHammer, geneExp)) + 
+   geom_point() + 
+   facet_wrap(~probeset))
+
+(p <- ggplot(nDat, aes(crabHammer, geneExp, color=gType)) + 
+   geom_point() + 
+   facet_wrap(~probeset))
+
+# facet grid
+(p <- ggplot(nDat, aes(crabHammer, geneExp, color=gType)) + 
+   geom_point() + 
+   facet_grid(gType~devStage))
+
+# show developmental stages via color
+(p <- ggplot(nDat, aes(crabHammer, geneExp, color=devStage)) + 
+   geom_point() + 
+   facet_wrap(~probeset))
+```
+
+
+## Stripplot
+```{r}
+oDat <- with(kDat, data.frame(sidChar, sidNum, devStage, gType,
+                              probeset = factor(rep(c("crabHammer", "eggBomb","poisonFang"), each = nrow(kDat))),
+                              geneExp = c(crabHammer, eggBomb, poisonFang)))
+str(oDat)
+
+(p <- ggplot(oDat, aes(geneExp, probeset)) + 
+   geom_point())
+
+# add jitter, to avoid overplotting
+(p <- ggplot(oDat, aes(geneExp, probeset)) + 
+   geom_point(position = position_jitter(height = 0.1)))
+
+
+(p <- ggplot(oDat, aes(geneExp, devStage, color = probeset)) + 
+   geom_point())
+
+(p <- ggplot(oDat, aes(devStage, geneExp, color = probeset)) + 
+   geom_point())
+
+(p <- ggplot(oDat, aes(devStage, geneExp, color = probeset)) + 
+   geom_point() + 
+   facet_wrap(~probeset))
+
+# add genoType information
+(p <- ggplot(oDat, aes(devStage, geneExp, color=gType)) + 
+   geom_point() + 
+   facet_wrap(~probeset))
+
+
+(p <- ggplot(oDat, aes(geneExp, probeset)) + 
+   geom_point() + 
+   facet_wrap(~devStage))
+
+# add averages
+(p <- ggplot(oDat, aes(devStage, geneExp, color = probeset)) + 
+   geom_point() + 
+   facet_wrap(~probeset) +
+   stat_summary(fun.y = mean, geom = "point", shape = 3, size = 3))
+```
+
+```{r}
+## move on to densities
+
+# 1. geom density
+(p <- ggplot(oDat, aes(geneExp)) + 
+   geom_density())
+
+# 2. stat density, doesn't seem to have the vertical lines
+(p <- ggplot(oDat, aes(geneExp)) + 
+   stat_density(geom = "line", position = "identity"))
+
+(p <- ggplot(oDat, aes(geneExp)) + 
+   stat_density(geom = "line"))
+
+
+# add the points under the density plot
+p <- ggplot(oDat, aes(geneExp)) + 
+   stat_density(geom = "line", position = "identity")
+(p <- p + geom_point(aes(y = .05), position = position_jitter(height = .005)))
+
+# change the bandwith... remove the previous layer
+p$layers[1] <- NULL
+(p <- p + stat_density(geom = "line", position = "identity", adjust = 0.5))
+
+# two panels by gType
+(p <- p + facet_wrap(~gType))
+p$layers
+
+# overlap, discriminate by colour
+p <- ggplot(oDat, aes(geneExp, color=gType)) + 
+  stat_density(geom = "line", position = "identity")
+p <- p + geom_point(aes(y = .05), position = position_jitter(height = .005))
+p
+```
+
+## Continue with Boxplots
+```{r}
+# indicate genoType by color
+(p <- ggplot(oDat, aes(devStage, geneExp, color=gType)) + 
+  geom_boxplot())
+
+# indicate genoType by panels
+(p <- ggplot(oDat, aes(devStage, geneExp)) + 
+   geom_boxplot() +
+   facet_wrap(~gType))
+
+# a violinplot :)
+(p <- ggplot(oDat, aes(devStage, geneExp)) +
+   geom_violin())
+
+## Now the full dataset...
+prDat <- read.table(paste(dataDir, "GSE4051_data.tsv", sep = ""))
+str(prDat, max.level =0)
+prDes <- readRDS(paste(dataDir, "GSE4051_design.rds", sep = ""))
+str(prDes)
+set.seed(2)
+
+# sample two objects
+yo <- sample(1:ncol(prDat), size = 2)
+
+# this syntax (data.frame[[i]]) picks the ith column
+bDat <- data.frame(y = prDat[[yo[1]]], z = prDat[[yo[2]]])
+str(bDat)
+
+# draw all the points
+(p <- ggplot(bDat, aes(z, y)) + 
+   geom_point())
+
+# add some transparency to make it more clear
+(p <- ggplot(bDat, aes(z, y)) + 
+   geom_point(alpha = 0.1))
+
+# or use contour 
+(p <- ggplot(bDat, aes(z, y)) + 
+   stat_density2d())
+
+# fancy tile
+(p <- ggplot(bDat, aes(z, y)) + 
+   stat_density2d(geom = "tile", contour = F, aes(fill = ..density..)) + 
+   scale_fill_gradient(low = "white", high = "blue"))
+
+# have to install hexbin package
+p <- ggplot(bDat, aes(z, y)) + 
+  stat_binhex()
+p
+
+# check out pairwise comparison
+set.seed(3)
+yo <- sample(1:ncol(prDat), size = 4)
+pairDat <- subset(prDat, select = yo)
+str(pairDat)
+
+(p <- plotmatrix(pairDat) + 
+   stat_binhex())
+
+install.packages("GGally")
+
+# as plot matrix is depricated, lets use the alternative:
+library("GGally")
+?ggpairs
+ggpairs(pairDat)
+```
+
+
+## Take home
+```{r}
+# choosing 2 probesets
+yo <- sample(1:nrow(prDat), size = 2)
+#pairDat <- subset(prDat, select = yo)
+newDat = prDat[yo,]
+head(newDat)
+
+chosenProbeSet = rownames(newDat)[[1]]
+# reshape the data
+head(t(newDat))
+str(t(newDat))
+
+newDat <- with(newDat, data.frame(prDes, geneExp = as.vector(t(newDat)), 
+                                         probeset = factor(rep(colnames(t(newDat)), each = nrow(t(newDat))))))
+head(newDat, nrow(prDes))
+newDat
+
+# choose two samples at random
+#rs = sample(nrow(prDes), 2)
+#newDat.small <- newDat[newDat$sidNum %in% rs, ]
+#head(newDat.small)
+
+# look at one probeset across different devStages and differnet genoetypes, then confirm in different samples
+p <- ggplot(newDat[newDat$probeset == chosenProbeSet, ], aes(geneExp, devStage, color = gType)) +
+  geom_point()
+p
+
+head(newDat.small)
+newDat.small[newDat.small$probeset != "1415670_at", ]
+length(unique(newDat.small$probeset))
+newDat.small$probeset
+nrow(newDat.small)
+```
