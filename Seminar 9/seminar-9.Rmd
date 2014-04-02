@@ -1,0 +1,149 @@
+Seminar 9
+========================================================
+
+Ref1: http://www.ugrad.stat.ubc.ca/~stat540/seminars/seminar09_clustering-pca.html
+
+*Excerpt from ref*
+Clustering on the photoreceptor data set.
+
+```{r}
+  library(edgeR)
+  library(plyr)
+  library(gplots)
+  library(RColorBrewer)
+  library(cluster)
+  library(pvclust)
+  library(xtable)
+  library(limma)
+```
+
+```{r}
+  source("style.R")
+```
+
+# load the data
+```{r}
+  dataDir <- "/Users/sohrab/Me/Apply/Canada Apply/Courses/Second Semester/Stat 540/Lab/stat540_2014/examples/photoRec/data/"
+  prDat <- read.table(paste(dataDir, "GSE4051_data.tsv", sep = ""), header=T, row.names = 1)
+  str(prDat, max.level = 0)
+  prDesc <- readRDS(paste(dataDir, "GSE4051_design.rds", sep=""))
+  str(prDesc)
+```
+
+Rescale the data (the rows, i.e., genes across samples) to aid visualization
+```{r}
+  sprDat <- t(scale(t(prDat)))
+  str(sprDat, max.level = 0, give.attr = FALSE)  
+  
+  # check the first 10...
+  round(data.frame(avgBefore = rowMeans(head(prDat)),
+                 avgAfter = rowMeans(head(sprDat)),
+                 varBefore = apply(head(prDat), 1, var),
+                 varAfter = apply(head(sprDat), 1, var)), 2)
+```
+
+It worked, the rows have mean = 0 and variance 1.
+
+# Sample Clustering
+
+## Hierarchical Clustering
+### Standards: Eucleadian Distance, average linkage kernel
+#### Note
+`dist` calculates distance between rows
+```{r}
+  # create the distance matrix,
+  pr.dis <- dist(t(sprDat), method = 'euclidean')
+
+  # interaction is a cool method :)
+  prDesc$grp <- with(prDesc, interaction(gType, devStage))
+  summary(prDesc$grp)
+```
+
+```{r}
+  # do hierarchical clustering using different kernels
+  linkage.types <- c("single", "complete", "average", "ward")
+  pr.hc <- lapply(linkage.types, function(x) hclust(pr.dis, method = x))
+
+  # plot the results
+  op <- par(mar = c(0,4,4,2), mfrow = c(2,2))
+
+  lapply(seq(pr.hc), function(x) plot(pr.hc[[x]], labels = F, main = linkage.types[[x]], xlab=""))  
+```
+
+Cut the tree and choose number of clusters, say 9:
+
+```{r}
+  par(op)
+
+  # identify 10 clusters
+  op <- par(mar = c(1,4,4,1))
+  plot(pr.hc[[4]], labels = prDesc$grp, cex = 0.6, main = "Ward showing 9 clusters")
+  rect.hclust(pr.hc[[4]], k = 9)
+```
+
+Moving to heatmaps:
+
+```{r}
+  jGraysFun <- colorRampPalette(brewer.pal(n = 9, "Greys"))
+  gTypeCols <- brewer.pal(11, "RdGy")[c(4,7)]
+
+  
+  heatmap(as.matrix(sprDat), Rowv = NA, col = jGraysFun(256),
+          hclustfun = function(x) hclust(x, method = 'ward'),
+          scale = "none", labCol = prDesc$grp, labRow = NA, margins = c(8,1),
+          ColSideColor = gTypeCols[unclass(prDesc$gType)])
+  legend("topright", legend = levels(prDesc$gType),
+         col = gTypeCols, lty = 1, lwd = 5, cex = 0.5)
+```
+
+# Partitioning methods for photoRec data
+
+## K-means clustering
+
+Refer to [this](http://www.r-statistics.com/2013/08/k-means-clustering-from-r-in-action/) for some explanation.
+
+```{r}
+  # make it reproducable
+  set.seed(31)
+
+  # let's choose 9 clusters
+  k <- 9
+  pr.km <- kmeans(t(sprDat), centers = k, nstart =  50)
+  
+  # within sum of squares, a indicator of clustering quality, 
+  # can be used in a scree plot to choose the right k
+  pr.km$withinss
+```
+
+
+Peek into each cluster:
+
+```{r}
+
+  pr.kmTable <- data.frame(devStage = prDesc$devStage, cluster = pr.km$cluster)
+  prTable  <-  xtable(with(pr.kmTable, table(devStage, cluster)),
+                    caption='Number of samples from each develomental stage within each k-means cluster')
+  
+  # it doens't accept only 7 letters, added the remaining ones
+  align(prTable) <- "lccccccccc"
+  print(prTable, type = 'html', caption.placement = 'top')
+```
+
+## PAM
+
+```{r}
+  # going for 9 clusters again
+  pr.pam <- pam(pr.dis, k = k)
+  pr.pamTable <- data.frame(devStage = prDesc$devStage,
+                          cluster = pr.pam$clustering)
+  pamTable  <-  xtable(with(pr.pamTable, table(devStage, cluster)),
+                     caption='Number of samples from each develomental stage within each PAM cluster')
+  align(pamTable) <- "lccccccccc"
+  print(pamTable, type = 'html', caption.placement = 'top')
+```
+
+
+reference:
+http://www.ugrad.stat.ubc.ca/~stat540/seminars/seminar09_clustering-pca.html
+
+
