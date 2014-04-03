@@ -15,6 +15,8 @@ Clustering on the photoreceptor data set.
   library(pvclust)
   library(xtable)
   library(limma)
+  library(reshape2)
+  library(lattice)
 ```
 
 ```{r}
@@ -100,7 +102,8 @@ Moving to heatmaps:
 
 ## K-means clustering
 
-Refer to [this](http://www.r-statistics.com/2013/08/k-means-clustering-from-r-in-action/) for some explanation.
+Refer to [this](http://www.r-statistics.com/2013/08/k-means-clustering-from-r-in-action/) for some explanation. For instance, nstart, tells the function to start from a random sample 50 times and
+do the analysis and report the best result.
 
 ```{r}
   # make it reproducable
@@ -110,7 +113,7 @@ Refer to [this](http://www.r-statistics.com/2013/08/k-means-clustering-from-r-in
   k <- 9
   pr.km <- kmeans(t(sprDat), centers = k, nstart =  50)
   
-  # within sum of squares, a indicator of clustering quality, 
+  # within sum of squares, an indicator of clustering quality, 
   # can be used in a scree plot to choose the right k
   pr.km$withinss
 ```
@@ -143,7 +146,250 @@ Peek into each cluster:
 ```
 
 
+##  The silhouette plot
+$s(i) := ( b(i) - a(i) ) / max( a(i), b(i) )$ 
+```{r}
+  op <- par(mar = c(5,1,4,4))
+  plot(pr.pam, main = "Silhouette Plot for 5 clusters")
+```
+
 reference:
 http://www.ugrad.stat.ubc.ca/~stat540/seminars/seminar09_clustering-pca.html
 
+# Gene clustering
 
+## A smaller dataset
+Let's first do DE analysis using limma and select top 972 genes across different developmental stages:
+
+```{r}
+  # DE analysis
+  model.mat <- model.matrix(~devStage, prDesc)
+
+  pr.fit <- lmFit(prDat, model.mat)
+  ebayes.fit <- eBayes(pr.fit)
+
+  # this list is sorted by adj.P.Val
+  top.genes <- topTable(ebayes.fit, number=972, coef=grep("devStage", colnames(coef(ebayes.fit))))
+  head(top.genes)
+
+  # a sanity check
+  sum(top.genes$adj.P.Val < 1e-05) == 972
+
+  
+  # filter it out
+  topDat <- sprDat[row.names(sprDat) %in% top.genes$ID, ]
+  nrow(topDat)
+```
+
+### Hierarchical
+```{r}
+  geneC.dis <- dist(topDat, method = 'euclidean')
+  geneC.hc.a <- hclust(geneC.dis, method = 'average')
+  plot(geneC.hc.a, labels = FALSE, main = "Hierarchical with Average Linkage", xlab = "")
+```
+
+
+### Partitioning
+
+Let's look at the centroids. But first, what is this plot? We've 972 points (for each gene) in a 39 dimensional space.
+
+In this plot, we're doing something wierd! We're plotting dimensions in the x-axis. So **samples** are the ticks/points in the horizontal axis and the y-value would be their magnitude of the point in that dimension.
+
+## Exercise: Improve the plot above [by] adding sample names to the x-axis (e.g., wt_E16_1)
+Make a list for each sample name, joining all the columns in prDesc:
+```{r}
+  l <- aaply(as.matrix(prDesc), 1, function(x) paste(x[3], x[4], x[2], sep="_"))
+
+  # is the order right?
+  all(prDesc[,1] == colnames(topDat))
+```
+
+Now use l as the labels in the backbone plot:
+
+```{r}
+  k <- 5
+  kmeans.genes <- kmeans(topDat, centers = k)
+  
+  # choose which cluster we want
+  clusterNum <- 1 
+  
+  par(mar=c(10, 4, 4, 8))
+  # the wierd thing. Dimensions as ticks on the x-axis
+  plot(kmeans.genes$centers[clusterNum, ], type="n", ylim=c(-5,5), xaxt = "n",
+         xlab = "", ylab = "Relative expression") 
+  
+  
+  axis(1, at=1:39,labels=l, col.axis="black", las=2)
+
+  # Plot the expression of all the genes in the selected cluster in grey. 
+  matlines(y = t(topDat[kmeans.genes$cluster == clusterNum, ]), col = 'grey') 
+  
+  # Add the cluster center. This is last so it isn't underneath the members
+  points(kmeans.genes$centers[clusterNum, ], type = 'l') 
+  
+  # Optional: colored points to show which development stage the samples are from.
+  points(kmeans.genes$centers[clusterNum, ],  col = prDesc$devStage, pch = 20) 
+```
+
+## Heatmaps and dendograms on top of them:
+
+```{r}
+
+  devStageCols <- brewer.pal(11, "RdGy")[c(2,4,7,9,11)]
+  heatmap(as.matrix(topDat), col = jGraysFun(256),
+          hclustfun = function(x) hclust(x, method = 'average'),
+          labCol = prDesc$grp, labRow = NA, margin = c(8,1), scale = "none",
+          ColSideColor = devStageCols[unclass(prDesc$devStage)])
+  legend("topleft", levels(prDesc$devStage), col = devStageCols,
+         lty = 1, lwd = 5, cex = 0.5)
+
+```
+
+
+# Redefining the attributes
+
+Basically, define a linear model, don't fit the parameters and then cluster genes by them. Just reformat it in a form suitable for later plotting clustering etc.
+
+```{r}
+  # stack probe data tall and skinny
+  annoTopDat <- stack(as.data.frame(topDat)) 
+
+  ?stack
+
+
+  # add probeset ID as variable
+  annoTopDat$probeset <- rownames(topDat) 
+  
+  head(annoTopDat)
+  # perhaps could have done a melt? Yeah, we'll go with melt
+  exp <- melt(topDat)  
+
+  ## get info on gType and devStage, then average over reps within devStage
+  # it's basically a table join
+  annoTopDat <- merge(annoTopDat, prDesc, by.x = "ind", by.y = "sidChar")
+
+  # basically, for each probeset, return the average for each dev stage
+  devStageAvg <- ddply(annoTopDat, ~ probeset, function(x) {
+    avgByDevStage <- aggregate(values ~ devStage, x, mean)$values
+    names(avgByDevStage) <- levels(x$devStage)
+    avgByDevStage
+    })
+
+  ## put probset info back into rownames
+  rownames(devStageAvg) <- devStageAvg$probeset
+  devStageAvg$probeset <- NULL
+  str(devStageAvg)
+
+  heatmap(as.matrix(devStageAvg), Colv = NA, col = jGraysFun(256),
+        hclustfun = function(x) hclust(x,method = 'average'),
+        labCol = colnames(devStageAvg), labRow = NA, margin = c(8,1))
+```
+
+Now we can cluster according to 
+```{r}
+  k <- 4
+  geneDS.km <- kmeans(devStageAvg, centers = k, nstart = 50)
+  clust.centers <- geneDS.km$centers
+  
+  # Look at all clusters
+  op <- par(mfrow = c(2, 2))
+  for(clusterNum in 1:4) {
+    # Set up the axes without plotting; ylim set based on trial run.
+    plot(clust.centers[clusterNum,], ylim = c(-4,4), type='n',
+         xlab = "Develomental Stage", ylab = "Relative expression",
+         axes = F, main = paste("Cluster", clusterNum, sep = " ")) 
+    axis(2)
+    axis(1, 1:5, c(colnames(clust.centers)[1:4],"4W"), cex.axis = 0.9)
+    
+    # Plot the expression of all the genes in the selected cluster in grey.
+    matlines(y = t(devStageAvg[geneDS.km$cluster == clusterNum, ]),
+             col = 'grey') 
+    
+    # Add the cluster center. This is last so it isn't underneath the members
+    points(clust.centers[clusterNum, ] , type = 'l') 
+    
+    # Optional: points to show development stages.
+    points(clust.centers[clusterNum, ],  pch = 20)
+  } 
+```
+
+Comparing cluster centers (centroids):
+```{r}
+  plot(clust.centers[clusterNum, ], ylim = c(-4, 4), type = 'n',
+       xlab = "Develomental Stage", ylab = "Average expression",
+       axes = FALSE, main = "Clusters centers") 
+  axis(2)
+  axis(1, 1:5, c(colnames(clust.centers)[1:4],"4W"), cex.axis = 0.9)
+  
+  for(clusterNum in 1:4) {
+    points(clust.centers[clusterNum,], type = 'l', col = clusterNum, lwd=2) 
+    points(clust.centers[clusterNum,] , col = clusterNum, pch = 20)
+  }
+```
+
+
+Cloud! And some experimenting with formula. Turns on that * and + have the same effect here.
+
+```{r}
+  cloud(devStageAvg[ ,"E16"] ~ devStageAvg[ ,"P6"] *
+        devStageAvg[ ,"4_weeks"], col = geneDS.km$clust,
+      xlab = "E16", ylab = "P6", zlab = "4_weeks", main="")
+
+  t = rep(2, 100)
+  t3 = seq(100)
+  t1 = 1:100
+  t2 = 100:1
+  cloud(t ~ t1 * t2)
+  wireframe(t ~ t1 * t2)
+  plot(t ~ t1 + t2)
+```
+
+# Statistical measures to evaluate clusters
+
+Let's give pvclust a try! The link [here](http://www.is.titech.ac.jp/~shimo/prog/pvclust/) notes that it can be used in parallel as well.
+
+We're using both p-value calculation methods here, AU and BP. AU (Approximately Unbiased) was recommened in the package's homepage.
+```{r}
+  pvc <- pvclust(topDat, nboot = 100)
+
+  plot(pvc, labels = prDesc$grp, cex = 0.6)
+  pvrect(pvc, alpha = 0.95) 
+```
+
+
+# PCA (principal components analysis) 
+```{r}
+  pcs <- prcomp(sprDat, center = F, scale = F) 
+
+  # scree plot
+  plot(pcs)
+```
+
+What is the y axis? What is the x axis? Y axis is the variable in the same column as the box and the x axis the same row. 
+
+There's an interesting correlation between sidNumber and PC2!
+
+```{r}
+  # append the rotations for the first 10 PCs to the phenodata
+  prinComp <- cbind(prDesc, pcs$rotation[prDesc$sidNum, 1:10]) 
+  
+  # scatter plot showing us how the first few PCs relate to covariates
+  plot(prinComp[ ,c("sidNum", "devStage", "gType", "PC1", "PC2", "PC3")],
+       pch = 19, cex = 0.8) 
+```
+
+Some experiments:
+For each instance, i.e., each sample, plot the two variables.
+```{r}
+  r  <- pcs$rotation
+  plot(PC2 ~ PC1, r)
+```
+
+
+```{r}
+  # plot data on first two PCs, colored by development stage
+  plot(prinComp[ ,c("PC1","PC2")], bg = prDesc$devStage, pch = 21, cex = 1.5)
+  legend(list(x = 0.2, y = 0.3), as.character(levels(prDesc$devStage)),
+       pch = 21, pt.bg = c(1,2,3,4,5))
+
+```
