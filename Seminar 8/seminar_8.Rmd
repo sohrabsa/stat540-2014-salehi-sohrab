@@ -1,0 +1,96 @@
+Seminar 8 DNA methylation analysis with Illumina's Infinium HumanMethylation450K array
+========================================================
+
+Ref1: http://www.ugrad.stat.ubc.ca/~stat540/seminars/seminar08_methylation.html
+
+
+*Excerpt from ref*
+This seminar is inspired by a STAT 540 project in 2013: Analysis of Gene Expression Omnibus Leukaemia Data from the Illumina HumanMethylation450 Array by Alice Zhu, Rachel Edgar, Shaun Jackman and Nick Fishbane. See their project website here.
+
+```{r}
+
+  library(GEOquery)
+  library(wateRmelon)
+  library(IlluminaHumanMethylation450k.db)
+```
+
+
+## Explore 450k methylation array data
+
+Download/load the dataset
+```{r}
+  setwd("/Users/sohrab/Me/Apply/Canada Apply/Courses/Second Semester/Stat 540/Lab/stat540-2014-salehi-sohrab/data")
+
+  if (file.exists("methyl_ALL.Rdata")) {
+    # if previously downloaded
+    load("methyl_ALL.Rdata")
+} else {
+    # if downloading for the first time
+    GSE39141 <- getGEO("GSE39141")
+    show(GSE39141)  ## 33 samples (29 ALL and 4 healthy B cells)
+    GSE42865 <- getGEO("GSE42865")  # took ~2 mins for JB
+    show(GSE42865)  ## 16 samples (9 healthy cells B cells and 7 other cells)
+
+    # Extract expression matrices (turn into data frames at once)
+    ALL.dat <- as.data.frame(exprs(GSE39141[[1]]))
+    CTRL.dat <- as.data.frame(exprs(GSE42865[[1]]))
+
+    # Obtain the meta-data for the samples and rename them perhaps?
+    ALL.meta <- pData(phenoData(GSE39141[[1]]))
+    CTRL.meta <- pData(phenoData(GSE42865[[1]]))
+
+    # create some labels
+    ALL.meta$Group <- c(rep("ALL", 29), rep("HBC", 4))
+    ## ALL: Case; HBC: Healthy B Cells
+
+    # Subset both meta-data and data for control (healthy) donors
+    CTRL.meta <- droplevels(subset(CTRL.meta, grepl("Healthy donor", characteristics_ch1.1)))
+    CTRL.dat <- subset(CTRL.dat, select = as.character(CTRL.meta$geo_accession))
+
+    # Rename variables
+    names(ALL.dat) <- paste(ALL.meta$Group, gsub("GSM", "", names(ALL.dat)), 
+        sep = "_")
+    names(CTRL.dat) <- paste("HBC", gsub("GSM", "", names(CTRL.dat)), sep = "_")
+
+    # save the data to avoid future re-downloading
+    save(ALL.dat, CTRL.dat, ALL.meta, CTRL.meta, file = "methyl_ALL.Rdata")
+}
+```
+Density plot of average Beta values for probes in the two datasets:
+```{r}
+
+
+```
+
+
+## Normalization
+
+Using `wateRmelon`, quantile normalize the experiments via `betaqn` method. There're 15 different normalization methods. Let's see what [this](http://www.biomedcentral.com/1471-2164/14/293) paper has to say...
+
+$β = M/(M + U + 100)$ where $M$ indicates intensity of methylated and $U$ not methylated. They conclude that quantile normalization yeilds `markedly` improved methods, using the 3 metrics they've derived.
+
+Check out [this paper](http://www.ncbi.nlm.nih.gov/pmc/articles/PMC3012676/) for more info on $\beta$ and $M$ values.
+
+```{r}
+  beta.matrix <- as.matrix(cbind(ALL.dat, CTRL.dat))
+  str(beta.matrix, max.level = 0)
+  system.time(beta.norm <- betaqn(beta.matrix))
+```
+
+
+## M values
+
+Assumptions of a linear model: don't have more than one mode and span $R$?
+<br />
+[Here's](http://people.duke.edu/~rnau/testing.htm) a reference on assumption of linear regression. The most relevant I've found is the normality of the errors. So is $\Beta$ value indicative of some kind of an error?
+
+
+```{r}
+  M.norm <- beta2m(beta.norm)
+```
+
+## CpG Islands
+
+## Differential methylation analysis with limma
+
+## Interpretation and functional enrichment analysis
