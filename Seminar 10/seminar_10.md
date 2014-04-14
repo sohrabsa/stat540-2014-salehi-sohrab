@@ -487,7 +487,7 @@ for (r in 1:cvruns) {
         pr.perf$pr.err[i, "Logit"] <- mean(pr.cl != testclass.fold)
         # pr.perf$pr.auc[i, 'Logit'] <- as.numeric(performance(pr.cl,
         # 'auc'))@y.values
-        predicted <- prediction(as.vector(pr.log), yhat.lda)
+        predicted <- prediction(as.vector(pr.log), pr.cl)
         pr.perf$pr.auc[i, "Logit"] <- as.numeric(performance(predicted, "auc")@y.values)
         
         # SVM
@@ -497,7 +497,7 @@ for (r in 1:cvruns) {
         
         # count the number of times the prediction was wrong in the test data.set
         pr.perf$pr.err[i, "SVM"] <- mean(pr.svm != testclass.fold)
-        predicted <- prediction(rep(1, length(yhat.lda)), yhat.lda)
+        predicted <- prediction(rep(1, length(pr.svm)), pr.svm)
         pr.perf$pr.auc[i, "SVM"] <- as.numeric(performance(predicted, "auc")@y.values)
         
         # Naive Bayes
@@ -506,7 +506,7 @@ for (r in 1:cvruns) {
         
         # count the number of times the prediction was wrong in the test data.set
         pr.perf$pr.err[i, "Naive_Bayes"] <- mean(pr.nbayes != testclass.fold)
-        predicted <- prediction(rep(1, length(yhat.lda)), yhat.lda)
+        predicted <- prediction(rep(1, length(pr.nbayes)), pr.nbayes)
         pr.perf$pr.auc[i, "Naive_Bayes"] <- as.numeric(performance(predicted, 
             "auc")@y.values)
         
